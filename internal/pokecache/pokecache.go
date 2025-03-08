@@ -1,29 +1,70 @@
 package pokecache
 
 import (
- 	"sync"
+	"sync"
 	"time"
 )
 
-type cache struct {
-	data map[string]cacheEntry
-	mu *sync.RMutex
+type Cache struct {
+	Entry map[string]cacheEntry
+	mu *sync.Mutex
 }
 
 type cacheEntry struct{
 	createdAt time.Time
-	val []byte
+	Val []byte
 }
 
-func NewCache(interval time.Duration) *cache{
-	c := &cache{
-		data: make(map[string]cacheEntry)
+func NewCache(interval time.Duration) *Cache{
+	c := &Cache{
+		Entry: make(map[string]cacheEntry),
+		mu:    &sync.Mutex{},
 	}
 
+
 	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
 		for {
-			time.Sleep(internal)
-			
+			select {
+				case <- ticker.C:
+					c.reapLoop(interval)	
+			}
 		}
+	}()
+	return c
+}
+
+func (c *Cache) Add(key string, val []byte){
+	c.mu.Lock()
+	defer c.mu.Unlock() 
+
+	c.Entry[key] = cacheEntry{
+		createdAt: time.Now(),
+		Val: val,
+	}
+}
+
+func (c *Cache) Get(key string) ([]byte, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if data, ok := c.Entry[key]; ok {
+		return data.Val, true
+	}
+	return nil, false
+}
+
+func (c *Cache) reapLoop(interval time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	//loop throught caches to find expired entry
+	now := time.Now()
+	for key, entry := range c.Entry{
+		if entry.createdAt.Add(interval).Before(now){
+			delete(c.Entry, key)
+		} 
 	}
 }

@@ -1,13 +1,15 @@
 package main
 
 import (
-	"fmt"
-	"strings"
 	"bufio"
-	"os"
-	"net/http"
-	"io"
 	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+	"github.com/evanlin0514/pokedexcli/internal/pokecache"
 )
 
 func cleanInput(text string) []string{
@@ -28,32 +30,36 @@ func printUsage() error {
 	return nil
 }
 
-func unmarshalJson(url string) (LocateData ,error) {
+func unmarshalJson(url string, cache *pokecache.Cache) (LocateData ,error) {
 	var result LocateData
-	res, err := http.Get(url)
-	if err != nil {
-		return result, fmt.Errorf("Error getting data: %v", err)
+	data, ok := cache.Get(url)
+	if !ok {
+		res, err := http.Get(url)
+		if err != nil {
+			return LocateData{}, fmt.Errorf("error getting data: %v", err)
+		}
+		defer res.Body.Close()
+		data, err = io.ReadAll(res.Body)
+		if err != nil {
+			return LocateData{}, fmt.Errorf("error reading data: %v", err)
+		}	
+		cache.Add(url, data)
 	}
-	defer res.Body.Close()
-	data, err := io.ReadAll(res.Body)
-	if err != nil {
-		return result, fmt.Errorf("Error reading data: %v", err)
-	}	
 
 	if err := json.Unmarshal(data, &result); err != nil {
-		return result, fmt.Errorf("Error unmarshaling: %v", err)
+		return result, fmt.Errorf("error unmarshaling: %v", err)
 	}
 	return result, nil
 }
 
 
-func printLocate(c *config, name string) error {
+func printLocate(c *config, cache *pokecache.Cache, name string) error {
 	var data LocateData
 	var err error
 	if name == "map" {
-		data, err = unmarshalJson(c.next) //data will be locateData	
+		data, err = unmarshalJson(c.next, cache) //data will be locateData	
 	} else {
-		data, err = unmarshalJson(c.previous) //data will be locateData
+		data, err = unmarshalJson(c.previous, cache) //data will be locateData
 	}
 	if err != nil {
 		return fmt.Errorf("%v", err)
@@ -108,6 +114,7 @@ func main() {
 		next: "https://pokeapi.co/api/v2/location-area",
 		previous: "",
 	}	
+	cache := pokecache.NewCache(time.Second * 5)
 	command := map[string]cliCommand{
 					"exit": {
 						name: "exit",
@@ -125,7 +132,7 @@ func main() {
 						name: "map",
 						description: "Display next 20 locations.",
 						callback: func() error {
-							return printLocate(&page, "map")
+							return printLocate(&page, cache, "map")
 						},	
 						page: &page,					
 					},
@@ -133,7 +140,7 @@ func main() {
 						name: "mapb",
 						description: "Display previous 20 locations.",
 						callback: func() error {
-							return printLocate(&page, "mapb")
+							return printLocate(&page, cache, "mapb")
 						},	
 						page: &page,					
 					},
@@ -156,7 +163,7 @@ func main() {
 						}
 					case  "help":
 						printUsage()
-						for k, _ := range command{
+						for k := range command{
 							fmt.Printf("%v: %v\n", command[k].name, command[k].description)
 						}
 					case "map":

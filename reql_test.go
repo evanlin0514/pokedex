@@ -64,3 +64,4 @@ func TestCleanInput(t *testing.T) {
 	fmt.Println("---------------------------------")
 	fmt.Printf("%d passed, %d failed\n", passCount, failCount)
 }
+
