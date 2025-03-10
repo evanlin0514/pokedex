@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 	"github.com/evanlin0514/pokedexcli/internal/pokecache"
+	"math/rand"
 )
 
 func cleanInput(text string) []string{
@@ -85,9 +86,10 @@ func printLocate(c *config, cache *pokecache.Cache, name string) error {
 	return nil
 }
 
-func printPokemon(cache *pokecache.Cache, area string) error {
-	var data PokeData
+func printPokemon(cache *pokecache.Cache, area string, pokeMap *map[string]bool) error {
+	var data PokeAreaData
 	var err error
+	(*pokeMap) = make(map[string]bool)
 	if area == ""{
 		return fmt.Errorf("invalid explore input: empty input")
 	}
@@ -100,8 +102,34 @@ func printPokemon(cache *pokecache.Cache, area string) error {
 
 	fmt.Printf("Exploring %v...\nFound Pokemon:\n", data.Location.Name)
 	for _, pokemon := range data.Pokemon_enounters{
-		fmt.Printf("- %v\n", pokemon.Pokemon.Name)
+		fmt.Printf("- %v\n", pokemon.Name)
+		(*pokeMap)[pokemon.Name] = true
 	}
+	return nil
+}
+
+func possibilityByPercentage(length int, percentage int) bool {
+    rand.Seed(time.Now().UnixNano()) // Seed the random number generator
+    return rand.Intn(length) < percentage
+}
+
+func catchPokemon(cache *pokecache.Cache, target string, pokeMap *map[string]bool) error {
+	var data PokeData
+	var err error
+	url := "https://pokeapi.co/api/v2/pokemon/" + target
+
+	if ok := (*pokeMap)[target]; !ok {
+		return fmt.Errorf("target not in this area!")
+	} 
+	err = unmarshalJson(url, cache, &data)
+	if err != nil {
+		return fmt.Errorf("error unmarshaling data.")
+	}
+	fmt.Printf("Throwing a Pokeball at %v...\n", data.Poke.Name)
+	if catch := possibilityByPercentage(100, 70); catch {
+		fmt.Printf("%v was caught!", data.Poke.Name)
+	}
+	fmt.Printf("%v escaped!", data.Poke.Name)
 	return nil
 }
 
@@ -127,13 +155,19 @@ type LocateData struct {
 	Results []locateArea `json:"results"`
 }
 
-type PokeData struct {
+type PokeAreaData struct {
 	Location locateArea `json:"location"`
-	Pokemon_enounters []struct {
-		Pokemon struct {
-			Name string `json:"name"`
-		}  `json:"pokemon"`
-	} `json:"pokemon_encounters"`
+	Pokemon_enounters []Pokemon `json:"pokemon_encounters"`
+}
+
+type Pokemon struct {
+	Name string `json:"name"`
+	Url string `json:"url"`
+}
+
+type PokeData struct {
+	BaseExperience int `json:"base_experience`
+	Poke Pokemon `json:"forms"`
 }
 
 func main() {
@@ -143,6 +177,7 @@ func main() {
 		previous: "",
 	}	
 	cache := pokecache.NewCache(time.Second * 5)
+	pokeList := make(map[string]bool, 0)
 	command := map[string]cliCommand{
 					"exit": {
 						name: "exit",
@@ -175,6 +210,14 @@ func main() {
 					"explore": {
 						name: "explore",
 						description: "explore the area, look up all the pokemon.",
+						callback: func() error {
+							return nil
+						},
+						page: &page,
+					},
+					"catch": {
+						name: "catch",
+						description: "catch pokemon in area you are in.",
 						callback: func() error {
 							return nil
 						},
@@ -217,7 +260,17 @@ func main() {
 							fmt.Println("error: invalid explore command input, index shoud be two.")
 							continue
 						}
-						err := printPokemon(cache, cleanSlice[1])
+						err := printPokemon(cache, cleanSlice[1], &pokeList)
+						fmt.Println(pokeList)
+						if err != nil {
+							fmt.Println(err)
+						}
+					case "catch":
+						if len(cleanSlice) != 2 {
+							fmt.Println("error: invalid catch command input, index shoud be two.")
+							continue
+						}
+						err := catchPokemon(cache, cleanSlice[1], &pokeList)
 						if err != nil {
 							fmt.Println(err)
 						}
