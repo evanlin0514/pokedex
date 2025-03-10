@@ -30,26 +30,25 @@ func printUsage() error {
 	return nil
 }
 
-func unmarshalJson(url string, cache *pokecache.Cache) (LocateData ,error) {
-	var result LocateData
+func unmarshalJson(url string, cache *pokecache.Cache, target interface{}) error {
 	data, ok := cache.Get(url)
 	if !ok {
 		res, err := http.Get(url)
 		if err != nil {
-			return LocateData{}, fmt.Errorf("error getting data: %v", err)
+			return fmt.Errorf("error getting data: %v", err)
 		}
 		defer res.Body.Close()
 		data, err = io.ReadAll(res.Body)
 		if err != nil {
-			return LocateData{}, fmt.Errorf("error reading data: %v", err)
+			return fmt.Errorf("error reading data: %v", err)
 		}	
 		cache.Add(url, data)
 	}
 
-	if err := json.Unmarshal(data, &result); err != nil {
-		return result, fmt.Errorf("error unmarshaling: %v", err)
+	if err := json.Unmarshal(data, target); err != nil {
+		return fmt.Errorf("error unmarshaling: %v", err)
 	}
-	return result, nil
+	return nil
 }
 
 
@@ -57,9 +56,9 @@ func printLocate(c *config, cache *pokecache.Cache, name string) error {
 	var data LocateData
 	var err error
 	if name == "map" {
-		data, err = unmarshalJson(c.next, cache) //data will be locateData	
+		err = unmarshalJson(c.next, cache, &data) //data will be locateData
 	} else {
-		data, err = unmarshalJson(c.previous, cache) //data will be locateData
+		err = unmarshalJson(c.previous, cache, &data)
 	}
 	if err != nil {
 		return fmt.Errorf("%v", err)
@@ -86,6 +85,26 @@ func printLocate(c *config, cache *pokecache.Cache, name string) error {
 	return nil
 }
 
+func printPokemon(cache *pokecache.Cache, area string) error {
+	var data PokeData
+	var err error
+	if area == ""{
+		return fmt.Errorf("invalid explore input: empty input")
+	}
+
+	url := "https://pokeapi.co/api/v2/location-area/" + area
+	err = unmarshalJson(url, cache, &data)
+	if err != nil {
+		return fmt.Errorf("error unmarshaling data: %v", err)
+	}
+
+	fmt.Printf("Exploring %v...\nFound Pokemon:\n", data.Location.Name)
+	for _, pokemon := range data.Pokemon_enounters{
+		fmt.Printf("- %v\n", pokemon.Pokemon.Name)
+	}
+	return nil
+}
+
 type cliCommand struct {
 	name string
 	description string
@@ -106,6 +125,15 @@ type LocateData struct {
 	Next string `json:"next"`
 	Previous string `json:"previous"`
 	Results []locateArea `json:"results"`
+}
+
+type PokeData struct {
+	Location locateArea `json:"location"`
+	Pokemon_enounters []struct {
+		Pokemon struct {
+			Name string `json:"name"`
+		}  `json:"pokemon"`
+	} `json:"pokemon_encounters"`
 }
 
 func main() {
@@ -144,16 +172,24 @@ func main() {
 						},	
 						page: &page,					
 					},
+					"explore": {
+						name: "explore",
+						description: "explore the area, look up all the pokemon.",
+						callback: func() error {
+							return nil
+						},
+						page: &page,
+					},
 				}
 	for {
 		fmt.Print("Pokedex > ")
 		if scanner.Scan() {
 			texts := scanner.Text()
-			if texts == "" {
-				fmt.Println("Empty input detected, try again")
+			cleanSlice := cleanInput(texts)
+			if len(cleanSlice) == 0 || len(cleanSlice) > 2 {
+				fmt.Println("Index error: too many or empty input.")
 				continue
 			} 
-			cleanSlice := cleanInput(texts)
 			if key, ok := command[cleanSlice[0]]; ok{
 				switch key.name {
 					case  "exit":
@@ -173,6 +209,15 @@ func main() {
 						}
 					case "mapb":
 						err := key.callback()
+						if err != nil {
+							fmt.Println(err)
+						}
+					case "explore":
+						if len(cleanSlice) != 2 {
+							fmt.Println("error: invalid explore command input, index shoud be two.")
+							continue
+						}
+						err := printPokemon(cache, cleanSlice[1])
 						if err != nil {
 							fmt.Println(err)
 						}
