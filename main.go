@@ -31,7 +31,7 @@ func printUsage() error {
 	return nil
 }
 
-func unmarshalJson(url string, cache *pokecache.Cache, target interface{}) error {
+func unmarshalJson(url string, cache *pokecache.Cache, target any) error {
 	data, ok := cache.Get(url)
 	if !ok {
 		res, err := http.Get(url)
@@ -101,36 +101,56 @@ func printPokemon(cache *pokecache.Cache, area string, pokeMap *map[string]bool)
 	}
 
 	fmt.Printf("Exploring %v...\nFound Pokemon:\n", data.Location.Name)
-	for _, pokemon := range data.Pokemon_enounters{
-		fmt.Printf("- %v\n", pokemon.Name)
-		(*pokeMap)[pokemon.Name] = true
+	for _, pokemon := range data.PokemonEncounters{
+		fmt.Printf("- %v\n", pokemon.Pokemon.Name)
+		(*pokeMap)[pokemon.Pokemon.Name] = true
 	}
 	return nil
 }
 
 func possibilityByPercentage(length int, percentage int) bool {
-    rand.Seed(time.Now().UnixNano()) // Seed the random number generator
     return rand.Intn(length) < percentage
 }
 
-func catchPokemon(cache *pokecache.Cache, target string, pokeMap *map[string]bool) error {
+func catchPokemon(cache *pokecache.Cache, target string, pokeMap *map[string]bool, mypokedex *map[string]PokeData) error {
 	var data PokeData
 	var err error
 	url := "https://pokeapi.co/api/v2/pokemon/" + target
 
 	if ok := (*pokeMap)[target]; !ok {
-		return fmt.Errorf("target not in this area!")
+		return fmt.Errorf("target not in this area")
 	} 
 	err = unmarshalJson(url, cache, &data)
 	if err != nil {
-		return fmt.Errorf("error unmarshaling data.")
+		return fmt.Errorf("error unmarshaling data")
 	}
-	fmt.Printf("Throwing a Pokeball at %v...\n", data.Poke.Name)
-	if catch := possibilityByPercentage(100, 70); catch {
-		fmt.Printf("%v was caught!", data.Poke.Name)
+	fmt.Printf("Throwing a Pokeball at %v...\n", data.Forms[0].Name)
+	if catch := possibilityByPercentage(data.BaseExperience, 70); catch {
+		fmt.Printf("%v was caught!\n", data.Forms[0].Name)
+		(*mypokedex)[data.Forms[0].Name] = data
+	} else {
+		fmt.Printf("%v escaped!\n", data.Forms[0].Name)
 	}
-	fmt.Printf("%v escaped!", data.Poke.Name)
 	return nil
+}
+
+func inspectPokemon(target string, mypokedex *map[string]PokeData) {
+	if pokemon, ok := (*mypokedex)[target]; ok {
+		fmt.Printf("Name: %v\n", pokemon.Forms[0].Name)
+		fmt.Printf("Height: %v\n", pokemon.Height)
+		fmt.Printf("Weight: %v\n", pokemon.Weight)
+		fmt.Println("Stats:")
+		for _, stat := range pokemon.Stats{
+			fmt.Printf("  -%v: %v\n", stat.Stat.Name, stat.Base_stat)
+		}
+		fmt.Println("Types:")
+		for _, typ := range pokemon.Types{
+			fmt.Printf("  -%v\n", typ.Typ.Name)
+		}
+	} else {
+		fmt.Println("haven't catched it yet!")
+	}
+	
 }
 
 type cliCommand struct {
@@ -157,7 +177,9 @@ type LocateData struct {
 
 type PokeAreaData struct {
 	Location locateArea `json:"location"`
-	Pokemon_enounters []Pokemon `json:"pokemon_encounters"`
+	PokemonEncounters []struct {
+		Pokemon Pokemon `json:"pokemon"`
+	} `json:"pokemon_encounters"`
 }
 
 type Pokemon struct {
@@ -166,8 +188,21 @@ type Pokemon struct {
 }
 
 type PokeData struct {
-	BaseExperience int `json:"base_experience`
-	Poke Pokemon `json:"forms"`
+	BaseExperience int `json:"base_experience"`
+	Weight int `json:"weight"`
+	Height int `json:"height"`
+	Stats []struct {
+		Base_stat int `json:"base_stat"`
+		Stat struct {
+			Name string `json:"name"`
+		} `json:"stat"`
+	} `json:"stats"`
+	Types []struct {
+		Typ struct {
+			Name string `json:"name"`
+		} `json:"type"`
+	} `json:"types"`
+	Forms []Pokemon `json:"forms"`
 }
 
 func main() {
@@ -178,6 +213,7 @@ func main() {
 	}	
 	cache := pokecache.NewCache(time.Second * 5)
 	pokeList := make(map[string]bool, 0)
+	mypokedex := make(map[string]PokeData)
 	command := map[string]cliCommand{
 					"exit": {
 						name: "exit",
@@ -223,6 +259,14 @@ func main() {
 						},
 						page: &page,
 					},
+					"inspect": {
+						name: "inspect",
+						description: "see your pokemon's stats",
+						callback: func() error {
+							return nil
+						},
+						page: &page,
+					},
 				}
 	for {
 		fmt.Print("Pokedex > ")
@@ -261,7 +305,7 @@ func main() {
 							continue
 						}
 						err := printPokemon(cache, cleanSlice[1], &pokeList)
-						fmt.Println(pokeList)
+
 						if err != nil {
 							fmt.Println(err)
 						}
@@ -270,10 +314,16 @@ func main() {
 							fmt.Println("error: invalid catch command input, index shoud be two.")
 							continue
 						}
-						err := catchPokemon(cache, cleanSlice[1], &pokeList)
+						err := catchPokemon(cache, cleanSlice[1], &pokeList, &mypokedex)
 						if err != nil {
 							fmt.Println(err)
 						}
+					case "inspect":
+						if len(cleanSlice) != 2 {
+							fmt.Println("error: invalid catch command input, index shoud be two.")
+							continue
+						}
+						inspectPokemon(cleanSlice[1], &mypokedex)
 				}
 			} else {
 				fmt.Println("Unknown Command")
