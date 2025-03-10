@@ -127,6 +127,7 @@ func catchPokemon(cache *pokecache.Cache, target string, pokeMap *map[string]boo
 	fmt.Printf("Throwing a Pokeball at %v...\n", data.Forms[0].Name)
 	if catch := possibilityByPercentage(data.BaseExperience, 70); catch {
 		fmt.Printf("%v was caught!\n", data.Forms[0].Name)
+		fmt.Println("You may now inspect it with the inspect command.")
 		(*mypokedex)[data.Forms[0].Name] = data
 	} else {
 		fmt.Printf("%v escaped!\n", data.Forms[0].Name)
@@ -148,10 +149,17 @@ func inspectPokemon(target string, mypokedex *map[string]PokeData) {
 			fmt.Printf("  -%v\n", typ.Typ.Name)
 		}
 	} else {
-		fmt.Println("haven't catched it yet!")
-	}
-	
+		fmt.Println("haven't caught it yet!")
+	}	
 }
+
+func listPokemon(mypokedex *map[string]PokeData) {
+	for name := range (*mypokedex){
+		fmt.Println("Your Pokedex:")
+		fmt.Printf(" - %v\n", name)
+	}
+}
+
 
 type cliCommand struct {
 	name string
@@ -267,6 +275,14 @@ func main() {
 						},
 						page: &page,
 					},
+					"pokedex": {
+						name: "pokedex",
+						description: "list all Pokemon you caught",
+						callback: func() error {
+							return nil
+						},
+						page: &page,
+					},
 				}
 	for {
 		fmt.Print("Pokedex > ")
@@ -324,6 +340,8 @@ func main() {
 							continue
 						}
 						inspectPokemon(cleanSlice[1], &mypokedex)
+					case "pokedex":
+						listPokemon(&mypokedex)
 				}
 			} else {
 				fmt.Println("Unknown Command")
