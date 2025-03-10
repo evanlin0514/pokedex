@@ -154,8 +154,8 @@ func inspectPokemon(target string, mypokedex *map[string]PokeData) {
 }
 
 func listPokemon(mypokedex *map[string]PokeData) {
+	fmt.Println("Your Pokedex:")
 	for name := range (*mypokedex){
-		fmt.Println("Your Pokedex:")
 		fmt.Printf(" - %v\n", name)
 	}
 }
